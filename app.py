@@ -163,3 +163,10 @@ if uploaded_file:
             return output.getvalue()
 
         excel_data = convert_to_excel
+        # Streamlit download button
+        st.download_button(
+            label="Download Aggregated Data as Excel",
+            data=excel_data,
+            file_name="aggregated_data.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
