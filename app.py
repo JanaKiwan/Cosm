@@ -160,5 +160,5 @@ if uploaded_file:
 
         excel_data = convert_to_excel(aggregated_data)
         st.download_button("Download Aggregated Data as Excel", data=excel_data, file_name="aggregated_data.xlsx")
-
-
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
