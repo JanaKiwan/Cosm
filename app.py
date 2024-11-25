@@ -183,3 +183,152 @@ if page == "Data Pipeline":
     except Exception as e:
         # Handle errors gracefully
         st.error(f"An error occurred: {e}")
+# Page 2: Purchase Prediction
+elif page == "Purchase Prediction":
+    st.title("Purchase Prediction")
+
+    # Load aggregated data
+    st.write("Upload the aggregated customer dataset to use for predictions.")
+    aggregated_file = st.file_uploader("Upload Aggregated Data (Excel)", type=["xlsx", "xls"])
+
+    if aggregated_file:
+        aggregated_data = pd.read_excel(aggregated_file)
+        st.write("### Aggregated Data:")
+        st.dataframe(aggregated_data.head())
+
+        # Select a model
+        st.write("Select a model to predict purchase probability:")
+        model_choice = st.selectbox("Choose a model:", [
+            "Lasso Logistic Regression",
+            "Logistic Regression",
+            "Support Vector Classifier (SVC)",
+            "Decision Tree"
+        ])
+
+        # Load selected model
+        model_files = {
+            "Lasso Logistic Regression": "lasso_model.pkl",
+            "Logistic Regression": "best_logistic_pipeline.pkl",
+            "Support Vector Classifier (SVC)": "best_svc_pipeline.pkl",
+            "Decision Tree": "best_decision_tree_model.pkl"
+        }
+        metric_files = {
+            "Lasso Logistic Regression": "lasso_model_results.npy",
+            "Logistic Regression": "logistic_pipeline_results.npy",
+            "Support Vector Classifier (SVC)": "svc_pipeline_results.npy",
+            "Decision Tree": "decision_tree_model_results.npy"
+        }
+
+        model_file = model_files.get(model_choice)
+        metric_file = metric_files.get(model_choice)
+
+        if model_file and metric_file:
+            try:
+                model = joblib.load(model_file)
+                model_metrics = np.load(metric_file, allow_pickle=True).item()
+                st.success(f"{model_choice} loaded successfully!")
+            except Exception as e:
+                st.error(f"Failed to load model or metrics: {e}")
+                model = None
+                model_metrics = None
+
+            # Display model metrics
+            if model_metrics:
+                st.write("### Model Metrics:")
+                st.write(f"**ROC AUC:** {model_metrics['roc_auc_test']:.2f}")
+                st.write(f"**Best Threshold:** {model_metrics['best_threshold']:.2f}")
+                st.write(f"**True Positive Rate (TPR):** {model_metrics.get('tpr', 'N/A')}")
+                st.write(f"**True Negative Rate (TNR):** {model_metrics.get('tnr', 'N/A')}")
+
+            # Select a customer
+            customer_choice = st.selectbox("Select a Customer:", aggregated_data['CUSTOMERNAME'].unique())
+
+            if model and customer_choice:
+                # Filter customer data
+                customer_data = aggregated_data[aggregated_data['CUSTOMERNAME'] == customer_choice]
+
+                # Display customer insights
+                st.write("### 📈 Customer Insights")
+                st.write(f"**Country:** {customer_data['COUNTRYNAME'].iloc[0]}")
+                st.write(f"**Customer Lifetime (Months):** {customer_data['Customer_Lifetime'].iloc[0]}")
+                st.write(f"**Mean Time Between Purchases (Months):** {customer_data['Mean_Time_Between_Purchases'].iloc[0]:.2f}")
+                st.write(f"**Total Transactions:** {customer_data['Customer_Transactions'].iloc[0]}")
+                st.write(f"**Most Purchased Item:** {customer_data['Most_Frequent_Item_Group'].iloc[0]}")
+                st.write(f"**Average Purchase Value (AED):** {customer_data['Average_Purchase_Value'].iloc[0]:,.2f}")
+
+                # Interactive line plot for yearly transactions
+                yearly_transactions = (
+                    customer_data.groupby('YEAR')['Total Amount Purchased']
+                    .sum()
+                    .reset_index()
+                )
+                if not yearly_transactions.empty:
+                    import plotly.express as px
+
+                    st.subheader("📊 Yearly Transactions")
+                    fig = px.line(
+                        yearly_transactions,
+                        x="YEAR",
+                        y="Total Amount Purchased",
+                        markers=True,
+                        title=f"Yearly Transactions for {customer_choice}",
+                        template="plotly_white",
+                        line_shape="linear",
+                    )
+                    fig.update_traces(
+                        line_color="purple",
+                        mode="lines+markers",
+                    )
+                    fig.update_layout(
+                        xaxis=dict(tickmode="linear", tickformat=".0f"),
+                        xaxis_title="Year",
+                        yaxis_title="Total Amount Purchased (AED)",
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning(f"No transaction data available for {customer_choice}.")
+
+                # Prepare data for prediction
+                columns_to_exclude = [
+                    'CUSTOMERNAME', 'Segment', 'Purchase Probability Flag', 'COUNTRYNAME'
+                ]
+                customer_features = customer_data.drop(columns=columns_to_exclude, errors='ignore')
+
+                # Preprocessing pipeline
+                numerical_vars = ['Customer_Transactions', 'Minimum Amount Purchased', 'Average Purchase Per Month',
+                                  'Is_Repeat_Customer', 'Max_Time_Without_Purchase', 'Std_Dev_Time_Between_Purchases',
+                                  'Mean_Time_Between_Purchases', 'Average_Purchase_Value', 'Refund_Ratio',
+                                  'Active_Month_Percentage']
+                categorical_vars = ['Most Frequent Item_Group']
+
+                preprocessor = ColumnTransformer(
+                    transformers=[
+                        ('num', StandardScaler(), numerical_vars),
+                        ('cat', OneHotEncoder(drop='first', handle_unknown='ignore'), categorical_vars)
+                    ]
+                )
+
+                pipeline = Pipeline(steps=[('preprocessor', preprocessor)])
+
+                # Fit the pipeline with the aggregated data
+                try:
+                    pipeline.fit(aggregated_data)
+                except ValueError as ve:
+                    st.error(f"Error during preprocessing: {ve}")
+                    st.stop()
+
+                # Transform customer data
+                customer_processed = pipeline.transform(customer_features)
+
+                # Predict purchase probability
+                try:
+                    prob = model.predict_proba(customer_processed)[:, 1][0]
+                    purchase_flag = "Yes" if prob >= 0.5 else "No"
+
+                    # Display prediction results
+                    st.write(f"### Prediction for Customer: {customer_choice}")
+                    st.write(f"**Purchase Probability:** {prob:.2%}")
+                    st.write(f"**Purchase Flag:** {purchase_flag}")
+                except Exception as e:
+                    st.error(f"Prediction failed: {e}")
+
