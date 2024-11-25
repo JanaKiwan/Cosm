@@ -142,8 +142,12 @@ if uploaded_file:
             # Derived metrics
             agg_df['Refund_Ratio'] = agg_df['Total_Refund_Amount'].abs() / (
                 agg_df['Total_Amount_Purchased'] + agg_df['Total_Refund_Amount'].abs())
-            agg_df['Average_Purchase_Per_Month'] = agg_df['Total_Amount_Purchased'] / agg_df['Customer_Lifetime']
-            agg_df['Purchase_Frequency_Per_Month'] = agg_df['Customer_Transactions'] / agg_df['Customer_Lifetime']
+            agg_df['Average_Purchase_Per_Month'] = agg_df.apply(
+                lambda x: x['Total_Amount_Purchased'] / x['Customer_Lifetime'] if x['Customer_Lifetime'] > 0 else 0, axis=1
+            )
+            agg_df['Purchase_Frequency_Per_Month'] = agg_df.apply(
+                lambda x: x['Customer_Transactions'] / x['Customer_Lifetime'] if x['Customer_Lifetime'] > 0 else 0, axis=1
+            )
             return agg_df
 
         aggregated_data = aggregate_features_by_customer(engineered_data)
@@ -158,7 +162,4 @@ if uploaded_file:
                 df.to_excel(writer, index=False, sheet_name='Aggregated Data')
             return output.getvalue()
 
-        excel_data = convert_to_excel(aggregated_data)
-        st.download_button("Download Aggregated Data as Excel", data=excel_data, file_name="aggregated_data.xlsx")
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
+        excel_data = convert_to_excel
