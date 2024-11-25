@@ -51,15 +51,55 @@ if uploaded_file:
             df['Customer_Lifetime'] = (df['Last_Purchase'] - df['First_Purchase']).dt.days // 30
             df['Months_Since_Last_Purchase'] = (df['Date'].max() - df['Last_Purchase']).dt.days // 30
             df['Time_Between_Purchases'] = df.groupby('CUSTOMERNAME')['Date'].diff().dt.days // 30
-            df['Mean_Time_Between_Purchases'] = df.groupby('CUSTOMERNAME')['Time_Between_Purchases'].transform('mean')
-            df['Std_Dev_Time_Between_Purchases'] = df.groupby('CUSTOMERNAME')['Time_Between_Purchases'].transform('std')
-            df['Max_Time_Without_Purchase'] = df.groupby('CUSTOMERNAME')['Time_Between_Purchases'].transform('max')
+            df['Mean_Time_Between_Purchases'] = df.groupby('CUSTOMERNAME')['Time_Between_Purchases'].transform('mean').fillna(0)
+            df['Std_Dev_Time_Between_Purchases'] = df.groupby('CUSTOMERNAME')['Time_Between_Purchases'].transform('std').fillna(0)
+            df['Max_Time_Without_Purchase'] = df.groupby('CUSTOMERNAME')['Time_Between_Purchases'].transform('max').fillna(0)
             df['Is_Repeat_Customer'] = df['Customer_Transactions'] > 1
             return df
 
         engineered_data = engineer_features(cleaned_data)
         st.write("### Feature-Engineered Data:")
         st.dataframe(engineered_data.head())
+
+        # Calculate Seasonality Indices
+        def calculate_seasonality_indices(df):
+            def assign_rolling_year(row):
+                if row['YEAR'] == 2020 and row['PERIOD'] >= 9:
+                    return '20-21'
+                elif row['YEAR'] == 2021 and row['PERIOD'] <= 8:
+                    return '20-21'
+                elif row['YEAR'] == 2021 and row['PERIOD'] >= 9:
+                    return '21-22'
+                elif row['YEAR'] == 2022 and row['PERIOD'] <= 8:
+                    return '21-22'
+                elif row['YEAR'] == 2022 and row['PERIOD'] >= 9:
+                    return '22-23'
+                elif row['YEAR'] == 2023 and row['PERIOD'] <= 8:
+                    return '22-23'
+                elif row['YEAR'] == 2023 and row['PERIOD'] >= 9:
+                    return '23-24'
+                elif row['YEAR'] == 2024 and row['PERIOD'] <= 8:
+                    return '23-24'
+                else:
+                    return None
+
+            df['Rolling_Year'] = df.apply(assign_rolling_year, axis=1)
+
+            rolling_year_transactions = (
+                df.groupby(['CUSTOMERNAME', 'Rolling_Year'])['CUSTOMERNAME']
+                .count()
+                .unstack(fill_value=0)
+            )
+            rolling_year_transactions['Total_Transactions'] = rolling_year_transactions.sum(axis=1)
+            seasonality_indices = rolling_year_transactions.div(rolling_year_transactions['Total_Transactions'], axis=0)
+            seasonality_indices.drop(columns=['Total_Transactions'], inplace=True)
+            seasonality_indices.columns = [f'Seasonality_Index_{col}' for col in seasonality_indices.columns]
+            df = df.merge(seasonality_indices, how='left', left_on='CUSTOMERNAME', right_index=True)
+            seasonality_columns = [col for col in df.columns if col.startswith('Seasonality_Index_')]
+            df[seasonality_columns] = df[seasonality_columns].fillna(0)
+            return df
+
+        engineered_data = calculate_seasonality_indices(engineered_data)
 
         # Aggregation Function
         def aggregate_features_by_customer(df):
@@ -112,3 +152,4 @@ if uploaded_file:
         st.download_button("Download Aggregated Data as Excel", data=excel_data, file_name="aggregated_data.xlsx")
     except Exception as e:
         st.error(f"An error occurred: {e}")
+
