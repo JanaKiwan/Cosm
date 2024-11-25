@@ -15,8 +15,17 @@ if uploaded_file is not None:
     st.write("### Uploaded Raw Data:")
     st.dataframe(raw_data.head())
 
+    # Display column names for debugging
+    st.write("### Column Names in Uploaded Data:")
+    st.write(list(raw_data.columns))
+
     # Data Cleaning Function
     def clean_data(df):
+        # Check if the required column exists before processing
+        if 'COUNTRYNAME' not in df.columns:
+            st.error("Error: The column 'COUNTRYNAME' is missing in the uploaded file.")
+            return df
+
         # Country name corrections
         country_name_corrections = {
             'UNITED KINGDOM': 'United Kingdom',
@@ -36,6 +45,13 @@ if uploaded_file is not None:
 
     # Feature Engineering
     def engineer_features(df):
+        # Check for required columns before processing
+        required_columns = ['YEAR', 'PERIOD', 'CUSTOMERNAME', 'AMOUNT']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            st.error(f"Error: Missing required columns for feature engineering: {', '.join(missing_columns)}")
+            return df
+
         df['Date'] = pd.to_datetime(df['YEAR'].astype(str) + '-' + df['PERIOD'].astype(str) + '-01')
         df['Customer_Transactions'] = df.groupby('CUSTOMERNAME')['AMOUNT'].transform('count')
         df['First_Purchase'] = df.groupby('CUSTOMERNAME')['Date'].transform('min')
@@ -122,3 +138,4 @@ if uploaded_file is not None:
     ax.set_xlabel('Months')
     ax.set_ylabel('Frequency')
     st.pyplot(fig)
+
