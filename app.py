@@ -162,7 +162,8 @@ if uploaded_file:
                 df.to_excel(writer, index=False, sheet_name='Aggregated Data')
             return output.getvalue()
 
-        excel_data = convert_to_excel
+        excel_data = convert_to_excel(aggregated_data)
+
         # Streamlit download button
         st.download_button(
             label="Download Aggregated Data as Excel",
@@ -170,3 +171,7 @@ if uploaded_file:
             file_name="aggregated_data.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+    except Exception as e:
+        # Handle errors gracefully
+        st.error(f"An error occurred: {e}")
