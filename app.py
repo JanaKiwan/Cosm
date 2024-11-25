@@ -1,3 +1,12 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import joblib
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from io import BytesIO
+
 # Navigation Menu
 st.sidebar.title("Navigation")
 page = st.sidebar.radio("Go to", ["Data Pipeline", "Purchase Prediction"])
@@ -8,12 +17,12 @@ if page == "Data Pipeline":
 
     uploaded_file = st.file_uploader("Upload your raw transactional data (Excel)", type=["xlsx", "xls"])
     if uploaded_file:
-        try:
-            # Load and clean data
-            header_row = st.number_input("Enter the row number for headers (default: 1)", min_value=1, value=1) - 1
-            raw_data = pd.read_excel(uploaded_file, header=header_row)
-            raw_data.columns = raw_data.columns.str.strip()
+        header_row = st.number_input("Enter the row number for headers (1-based index, default: 1)", min_value=1, value=1) - 1
 
+        try:
+            # Load data
+            raw_data = pd.read_excel(uploaded_file, header=header_row)
+            raw_data.columns = raw_data.columns.str.strip()  # Normalize column names
             st.write("### Uploaded Raw Data:")
             st.dataframe(raw_data.head())
 
@@ -180,8 +189,8 @@ if page == "Data Pipeline":
 elif page == "Purchase Prediction":
     st.title("Purchase Prediction")
 
-    # Upload aggregated data
-    st.write("Upload the aggregated customer dataset for predictions.")
+    # Load aggregated data
+    st.write("Upload the aggregated customer dataset to use for predictions.")
     aggregated_file = st.file_uploader("Upload Aggregated Data (Excel)", type=["xlsx", "xls"])
 
     if aggregated_file:
@@ -189,8 +198,8 @@ elif page == "Purchase Prediction":
         st.write("### Aggregated Data:")
         st.dataframe(aggregated_data.head())
 
-        # Model selection
-        st.write("Select a model for purchase prediction:")
+        # Select a model
+        st.write("Select a model to predict purchase probability:")
         model_choice = st.selectbox("Choose a model:", [
             "Lasso Logistic Regression",
             "Logistic Regression",
@@ -198,41 +207,50 @@ elif page == "Purchase Prediction":
             "Decision Tree"
         ])
 
-        # Map models and metrics
+        # Load selected model
         model_files = {
-            "Lasso Logistic Regression": ("lasso_model.pkl", "lasso_model_all_data.npy"),
-            "Logistic Regression": ("best_logistic_pipeline.pkl", "logistic_pipeline_all_data.npy"),
-            "Support Vector Classifier (SVC)": ("best_svc_pipeline.pkl", "svc_pipeline_all_data.npy"),
-            "Decision Tree": ("best_decision_tree_model.pkl", "decision_tree_all_data.npy")
+            "Lasso Logistic Regression": "lasso_model.pkl",
+            "Logistic Regression": "best_logistic_pipeline.pkl",
+            "Support Vector Classifier (SVC)": "best_svc_pipeline.pkl",
+            "Decision Tree": "best_decision_tree_model.pkl"
+        }
+        metric_files = {
+            "Lasso Logistic Regression": "lasso_model_results.npy",
+            "Logistic Regression": "logistic_pipeline_results.npy",
+            "Support Vector Classifier (SVC)": "svc_pipeline_results.npy",
+            "Decision Tree": "decision_tree_model_results.npy"
         }
 
-        # Load selected model and metrics
-        if model_choice in model_files:
-            model_file, metric_file = model_files[model_choice]
+        model_file = model_files.get(model_choice)
+        metric_file = metric_files.get(model_choice)
+
+        if model_file and metric_file:
             try:
                 model = joblib.load(model_file)
-                metrics = np.load(metric_file, allow_pickle=True).item()
+                model_metrics = np.load(metric_file, allow_pickle=True).item()
                 st.success(f"{model_choice} loaded successfully!")
-
-                # Display model metrics
-                st.write("### Model Metrics:")
-                st.write(f"**ROC AUC (Test):** {metrics['roc_auc_test']:.2f}")
-                st.write(f"**Precision-Recall AUC (Test):** {metrics['pr_auc_test']:.2f}")
-                st.write(f"**Best Threshold:** {metrics['best_threshold']:.2f}")
-
             except Exception as e:
                 st.error(f"Failed to load model or metrics: {e}")
-                st.stop()
+                model = None
+                model_metrics = None
 
-            # Select customer for prediction
+            # Display model metrics
+            if model_metrics:
+                st.write("### Model Metrics:")
+                st.write(f"**ROC AUC:** {model_metrics['roc_auc_test']:.2f}")
+                st.write(f"**Best Threshold:** {model_metrics['best_threshold']:.2f}")
+                st.write(f"**True Positive Rate (TPR):** {model_metrics.get('tpr', 'N/A')}")
+                st.write(f"**True Negative Rate (TNR):** {model_metrics.get('tnr', 'N/A')}")
+
+            # Select a customer
             customer_choice = st.selectbox("Select a Customer:", aggregated_data['CUSTOMERNAME'].unique())
 
-            if customer_choice:
+            if model and customer_choice:
                 # Filter customer data
                 customer_data = aggregated_data[aggregated_data['CUSTOMERNAME'] == customer_choice]
 
                 # Display customer insights
-                st.write("### Customer Insights")
+                st.write("### 📈 Customer Insights")
                 st.write(f"**Country:** {customer_data['COUNTRYNAME'].iloc[0]}")
                 st.write(f"**Customer Lifetime (Months):** {customer_data['Customer_Lifetime'].iloc[0]}")
                 st.write(f"**Mean Time Between Purchases (Months):** {customer_data['Mean_Time_Between_Purchases'].iloc[0]:.2f}")
@@ -240,15 +258,18 @@ elif page == "Purchase Prediction":
                 st.write(f"**Most Purchased Item:** {customer_data['Most_Frequent_Item_Group'].iloc[0]}")
                 st.write(f"**Average Purchase Value (AED):** {customer_data['Average_Purchase_Value'].iloc[0]:,.2f}")
 
-                # Prepare customer data for prediction
-                columns_to_exclude = ['CUSTOMERNAME', 'COUNTRYNAME']
+                # Prepare data for prediction
+                columns_to_exclude = [
+                    'CUSTOMERNAME', 'Segment', 'Purchase Probability Flag', 'COUNTRYNAME'
+                ]
                 customer_features = customer_data.drop(columns=columns_to_exclude, errors='ignore')
 
                 # Preprocessing pipeline
-                numerical_vars = ['Customer_Transactions', 'Average Purchase Per Month',
-                                  'Mean_Time_Between_Purchases', 'Is_Repeat_Customer',
-                                  'Average_Purchase_Value', 'Refund_Ratio']
-                categorical_vars = ['Most_Frequent_Item_Group']
+                numerical_vars = ['Customer_Transactions', 'Minimum Amount Purchased', 'Average Purchase Per Month',
+                                  'Is_Repeat_Customer', 'Max_Time_Without_Purchase', 'Std_Dev_Time_Between_Purchases',
+                                  'Mean_Time_Between_Purchases', 'Average_Purchase_Value', 'Refund_Ratio',
+                                  'Active_Month_Percentage']
+                categorical_vars = ['Most Frequent Item_Group']
 
                 preprocessor = ColumnTransformer(
                     transformers=[
@@ -257,20 +278,22 @@ elif page == "Purchase Prediction":
                     ]
                 )
 
-                # Fit preprocessing pipeline
+                pipeline = Pipeline(steps=[('preprocessor', preprocessor)])
+
+                # Fit the pipeline with the aggregated data
                 try:
-                    preprocessor.fit(aggregated_data)
+                    pipeline.fit(aggregated_data)
                 except ValueError as ve:
-                    st.error(f"Preprocessing error: {ve}")
+                    st.error(f"Error during preprocessing: {ve}")
                     st.stop()
 
                 # Transform customer data
-                customer_processed = preprocessor.transform(customer_features)
+                customer_processed = pipeline.transform(customer_features)
 
                 # Predict purchase probability
                 try:
                     prob = model.predict_proba(customer_processed)[:, 1][0]
-                    purchase_flag = "Yes" if prob >= metrics['best_threshold'] else "No"
+                    purchase_flag = "Yes" if prob >= 0.5 else "No"
 
                     # Display prediction results
                     st.write(f"### Prediction for Customer: {customer_choice}")
@@ -279,10 +302,4 @@ elif page == "Purchase Prediction":
                 except Exception as e:
                     st.error(f"Prediction failed: {e}")
 
-                    # Display prediction results
-                    st.write(f"### Prediction for Customer: {customer_choice}")
-                    st.write(f"**Purchase Probability:** {prob:.2%}")
-                    st.write(f"**Purchase Flag:** {purchase_flag}")
-                except Exception as e:
-                    st.error(f"Prediction failed: {e}")
 
