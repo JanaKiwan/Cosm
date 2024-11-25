@@ -2,43 +2,32 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from io import BytesIO  # For creating Excel in-memory files
+from io import BytesIO
 
-# Title
 st.title("Customer Data Analytics Pipeline")
 
-# File Upload Section
 uploaded_file = st.file_uploader("Upload your raw transactional data (Excel)", type=["xlsx", "xls"])
-if uploaded_file is not None:
-    # Let the user specify the header row
+if uploaded_file:
     header_row = st.number_input("Enter the row number for headers (1-based index, default: 1)", min_value=1, value=1) - 1
 
-    # Load data
     try:
         raw_data = pd.read_excel(uploaded_file, header=header_row)
+        raw_data.columns = raw_data.columns.str.strip()  # Normalize column names
         st.write("### Uploaded Raw Data:")
         st.dataframe(raw_data.head())
 
-        # Display column names for debugging
         st.write("### Column Names in Uploaded Data:")
         st.write(list(raw_data.columns))
 
-        # Data Cleaning Function
         def clean_data(df):
-            # Check if the required column exists before processing
             if 'COUNTRYNAME' not in df.columns:
-                st.error("Error: The column 'COUNTRYNAME' is missing in the uploaded file.")
+                st.error("Error: The column 'COUNTRYNAME' is missing.")
                 return df
-
-            # Country name corrections
-            country_name_corrections = {
+            df['COUNTRYNAME'] = df['COUNTRYNAME'].replace({
                 'UNITED KINGDOM': 'United Kingdom',
                 'BAHRAIN': 'Bahrain',
                 'IVORY COAST': "Côte d'Ivoire"
-            }
-            df.loc[:, 'COUNTRYNAME'] = df['COUNTRYNAME'].replace(country_name_corrections).str.title()
-
-            # Remove inconsistent records
+            }).str.title()
             df = df[~((df['AMOUNT'] < 0) & (df['VOLUME'] >= 0))]
             df = df[~((df['VOLUME'] < 0) & (df['AMOUNT'] >= 0))]
             return df
@@ -47,22 +36,18 @@ if uploaded_file is not None:
         st.write("### Cleaned Data:")
         st.dataframe(cleaned_data.head())
 
-        # Feature Engineering
         def engineer_features(df):
-            # Check for required columns before processing
             required_columns = ['YEAR', 'PERIOD', 'CUSTOMERNAME', 'AMOUNT']
             missing_columns = [col for col in required_columns if col not in df.columns]
             if missing_columns:
-                st.error(f"Error: Missing required columns for feature engineering: {', '.join(missing_columns)}")
+                st.error(f"Missing required columns: {', '.join(missing_columns)}")
                 return df
-
-            df['Date'] = pd.to_datetime(df['YEAR'].astype(str) + '-' + df['PERIOD'].astype(str) + '-01')
+            df['Date'] = pd.to_datetime(df['YEAR'].astype(str) + '-' + df['PERIOD'].astype(str) + '-01', errors='coerce')
             df['Customer_Transactions'] = df.groupby('CUSTOMERNAME')['AMOUNT'].transform('count')
             df['First_Purchase'] = df.groupby('CUSTOMERNAME')['Date'].transform('min')
             df['Last_Purchase'] = df.groupby('CUSTOMERNAME')['Date'].transform('max')
-            most_recent_date = df['Date'].max()
             df['Customer_Lifetime'] = (df['Last_Purchase'] - df['First_Purchase']).dt.days // 30
-            df['Months_Since_Last_Purchase'] = (most_recent_date - df['Last_Purchase']).dt.days // 30
+            df['Months_Since_Last_Purchase'] = (df['Date'].max() - df['Last_Purchase']).dt.days // 30
             df['Is_Repeat_Customer'] = df['Customer_Transactions'] > 1
             return df
 
@@ -70,22 +55,17 @@ if uploaded_file is not None:
         st.write("### Feature-Engineered Data:")
         st.dataframe(engineered_data.head())
 
-        # Aggregation Function
         def aggregate_features_by_customer(df):
+            if 'CUSTOMERNAME' not in df.columns:
+                st.error("Error: 'CUSTOMERNAME' column is required for aggregation.")
+                return df
             agg_dict = {
                 'AMOUNT': [('Total_Amount_Purchased', lambda x: x[x > 0].sum()),
                            ('Max_Amount_Purchased', lambda x: x[x > 0].max()),
                            ('Min_Amount_Purchased', lambda x: x[x > 0].min())],
-                'VOLUME': [('Total_Volume_Purchased', lambda x: x[x > 0].sum()),
-                           ('Max_Volume_Purchased', lambda x: x[x > 0].max()),
-                           ('Min_Volume_Purchased', lambda x: x[x > 0].min())],
-                'ITEMGROUPDESCRIPTION': [('Most_Frequent_Item_Group', lambda x: x.mode().iloc[0] if not x.mode().empty else None)],
-                'Customer_Transactions': [('Customer_Transactions', 'first')],
-                'Months_Since_Last_Purchase': [('Months_Since_Last_Purchase', 'first')],
-                'Customer_Lifetime': [('Customer_Lifetime', 'first')]
+                'VOLUME': [('Total_Volume_Purchased', lambda x: x[x > 0].sum())],
+                'ITEMGROUPDESCRIPTION': [('Most_Frequent_Item_Group', lambda x: x.mode().iloc[0] if not x.mode().empty else None)]
             }
-
-            # Flatten the aggregation
             agg_df = df.groupby('CUSTOMERNAME').agg(
                 **{new_col: (col, func) for col, entries in agg_dict.items() for new_col, func in entries}
             ).reset_index()
@@ -95,55 +75,13 @@ if uploaded_file is not None:
         st.write("### Aggregated Customer Data:")
         st.dataframe(aggregated_data.head())
 
-        # Refund and Purchase Metrics Calculation
-        def calculate_refund_and_purchase_metrics(df):
-            df['Refund_Ratio'] = df['Total_Amount_Purchased'].abs() / (
-                df['Total_Amount_Purchased'] + df['Total_Amount_Purchased'].abs())
-            df['Average_Purchase_Per_Month'] = df['Total_Amount_Purchased'] / df['Customer_Lifetime']
-            return df
-
-        aggregated_data = calculate_refund_and_purchase_metrics(aggregated_data)
-        st.write("### Aggregated Data with Metrics:")
-        st.dataframe(aggregated_data.head())
-
-        # Data Download as Excel
-        @st.cache_data
         def convert_to_excel(df):
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df.to_excel(writer, index=False, sheet_name='Aggregated Data')
-            processed_data = output.getvalue()
-            return processed_data
+            return output.getvalue()
 
         excel_data = convert_to_excel(aggregated_data)
-        st.download_button(
-            label="Download Aggregated Data as Excel",
-            data=excel_data,
-            file_name='aggregated_customer_data.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-
-        # Visualizations
-        st.write("### Refund Trends Over Time")
-        refunds_over_time = engineered_data.groupby('Date')['AMOUNT'].sum().reset_index()
-        refunds_over_time['AMOUNT'] = refunds_over_time['AMOUNT'].abs()
-
-        fig, ax = plt.subplots()
-        ax.plot(refunds_over_time['Date'], refunds_over_time['AMOUNT'], marker='o')
-        ax.set_title('Refund Trends Over Time')
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Refund Amount')
-        st.pyplot(fig)
-
-        st.write("### Customer Lifetime Distribution")
-        fig, ax = plt.subplots()
-        ax.hist(engineered_data['Customer_Lifetime'], bins=20, color='skyblue')
-        ax.set_title('Customer Lifetime Distribution')
-        ax.set_xlabel('Months')
-        ax.set_ylabel('Frequency')
-        st.pyplot(fig)
-
+        st.download_button("Download Aggregated Data as Excel", data=excel_data, file_name="aggregated_data.xlsx")
     except Exception as e:
-        st.error(f"An error occurred while processing the file: {e}")
-
-
+        st.error(f"An error occurred: {e}")
