@@ -207,7 +207,7 @@ elif page == "Purchase Prediction":
             "Decision Tree"
         ])
 
-        # Load selected model
+        # Updated model and metric file paths
         model_files = {
             "Lasso Logistic Regression": "lasso_model.pkl",
             "Logistic Regression": "best_logistic_pipeline.pkl",
@@ -215,10 +215,10 @@ elif page == "Purchase Prediction":
             "Decision Tree": "best_decision_tree_model.pkl"
         }
         metric_files = {
-            "Lasso Logistic Regression": "lasso_model_results.npy",
-            "Logistic Regression": "logistic_pipeline_results.npy",
-            "Support Vector Classifier (SVC)": "svc_pipeline_results.npy",
-            "Decision Tree": "decision_tree_model_results.npy"
+            "Lasso Logistic Regression": "lasso_model_all_data.npy",
+            "Logistic Regression": "logistic_pipeline_all_data.npy",
+            "Support Vector Classifier (SVC)": "svc_pipeline_all_data.npy",
+            "Decision Tree": "decision_tree_all_data.npy"
         }
 
         model_file = model_files.get(model_choice)
@@ -226,9 +226,13 @@ elif page == "Purchase Prediction":
 
         if model_file and metric_file:
             try:
+                # Load model
                 model = joblib.load(model_file)
-                model_metrics = np.load(metric_file, allow_pickle=True).item()
                 st.success(f"{model_choice} loaded successfully!")
+
+                # Load metrics from the corresponding .npy file
+                model_metrics = np.load(metric_file, allow_pickle=True).item()
+                st.success(f"Metrics for {model_choice} loaded successfully!")
             except Exception as e:
                 st.error(f"Failed to load model or metrics: {e}")
                 model = None
@@ -237,10 +241,20 @@ elif page == "Purchase Prediction":
             # Display model metrics
             if model_metrics:
                 st.write("### Model Metrics:")
-                st.write(f"**ROC AUC:** {model_metrics['roc_auc_test']:.2f}")
+                st.write(f"**Cross-validated AUC:** {np.mean(model_metrics['cv_scores']):.2f} ± {np.std(model_metrics['cv_scores']):.2f}")
+                st.write(f"**Validation ROC AUC:** {model_metrics['roc_auc_val']:.2f}")
+                st.write(f"**Test ROC AUC:** {model_metrics['roc_auc_test']:.2f}")
                 st.write(f"**Best Threshold:** {model_metrics['best_threshold']:.2f}")
-                st.write(f"**True Positive Rate (TPR):** {model_metrics.get('tpr', 'N/A')}")
-                st.write(f"**True Negative Rate (TNR):** {model_metrics.get('tnr', 'N/A')}")
+
+                st.write("**Confusion Matrix on Validation Data:**")
+                st.dataframe(pd.DataFrame(model_metrics['confusion_matrix_val'], 
+                                          columns=["Predicted Negative", "Predicted Positive"], 
+                                          index=["Actual Negative", "Actual Positive"]))
+
+                st.write("**Confusion Matrix on Test Data:**")
+                st.dataframe(pd.DataFrame(model_metrics['confusion_matrix_test'], 
+                                          columns=["Predicted Negative", "Predicted Positive"], 
+                                          index=["Actual Negative", "Actual Positive"]))
 
             # Select a customer
             customer_choice = st.selectbox("Select a Customer:", aggregated_data['CUSTOMERNAME'].unique())
@@ -293,7 +307,7 @@ elif page == "Purchase Prediction":
                 # Predict purchase probability
                 try:
                     prob = model.predict_proba(customer_processed)[:, 1][0]
-                    purchase_flag = "Yes" if prob >= 0.5 else "No"
+                    purchase_flag = "Yes" if prob >= model_metrics['best_threshold'] else "No"
 
                     # Display prediction results
                     st.write(f"### Prediction for Customer: {customer_choice}")
@@ -302,4 +316,4 @@ elif page == "Purchase Prediction":
                 except Exception as e:
                     st.error(f"Prediction failed: {e}")
 
-
+           
