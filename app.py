@@ -241,20 +241,28 @@ elif page == "Purchase Prediction":
             # Display model metrics
             if model_metrics:
                 st.write("### Model Metrics:")
-                st.write(f"**Cross-validated AUC:** {np.mean(model_metrics['cv_scores']):.2f} ± {np.std(model_metrics['cv_scores']):.2f}")
-                st.write(f"**Validation ROC AUC:** {model_metrics['roc_auc_val']:.2f}")
-                st.write(f"**Test ROC AUC:** {model_metrics['roc_auc_test']:.2f}")
-                st.write(f"**Best Threshold:** {model_metrics['best_threshold']:.2f}")
+                if 'roc_auc_val' in model_metrics:
+                    st.write(f"**Validation ROC AUC:** {model_metrics['roc_auc_val']:.2f}")
+                if 'roc_auc_test' in model_metrics:
+                    st.write(f"**Test ROC AUC:** {model_metrics['roc_auc_test']:.2f}")
+                if 'best_threshold' in model_metrics:
+                    st.write(f"**Best Threshold:** {model_metrics['best_threshold']:.2f}")
 
-                st.write("**Confusion Matrix on Validation Data:**")
-                st.dataframe(pd.DataFrame(model_metrics['confusion_matrix_val'], 
-                                          columns=["Predicted Negative", "Predicted Positive"], 
-                                          index=["Actual Negative", "Actual Positive"]))
+                if 'confusion_matrix_val' in model_metrics:
+                    st.write("**Confusion Matrix on Validation Data:**")
+                    st.dataframe(pd.DataFrame(
+                        model_metrics['confusion_matrix_val'], 
+                        columns=["Predicted Negative", "Predicted Positive"], 
+                        index=["Actual Negative", "Actual Positive"]
+                    ))
 
-                st.write("**Confusion Matrix on Test Data:**")
-                st.dataframe(pd.DataFrame(model_metrics['confusion_matrix_test'], 
-                                          columns=["Predicted Negative", "Predicted Positive"], 
-                                          index=["Actual Negative", "Actual Positive"]))
+                if 'confusion_matrix_test' in model_metrics:
+                    st.write("**Confusion Matrix on Test Data:**")
+                    st.dataframe(pd.DataFrame(
+                        model_metrics['confusion_matrix_test'], 
+                        columns=["Predicted Negative", "Predicted Positive"], 
+                        index=["Actual Negative", "Actual Positive"]
+                    ))
 
             # Select a customer
             customer_choice = st.selectbox("Select a Customer:", aggregated_data['CUSTOMERNAME'].unique())
@@ -307,7 +315,8 @@ elif page == "Purchase Prediction":
                 # Predict purchase probability
                 try:
                     prob = model.predict_proba(customer_processed)[:, 1][0]
-                    purchase_flag = "Yes" if prob >= model_metrics['best_threshold'] else "No"
+                    threshold = model_metrics.get('best_threshold', 0.5)
+                    purchase_flag = "Yes" if prob >= threshold else "No"
 
                     # Display prediction results
                     st.write(f"### Prediction for Customer: {customer_choice}")
