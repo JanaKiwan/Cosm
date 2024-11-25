@@ -19,6 +19,7 @@ if uploaded_file:
         st.write("### Column Names in Uploaded Data:")
         st.write(list(raw_data.columns))
 
+        # Data Cleaning Function
         def clean_data(df):
             if 'COUNTRYNAME' not in df.columns:
                 st.error("Error: The column 'COUNTRYNAME' is missing.")
@@ -36,6 +37,7 @@ if uploaded_file:
         st.write("### Cleaned Data:")
         st.dataframe(cleaned_data.head())
 
+        # Feature Engineering
         def engineer_features(df):
             required_columns = ['YEAR', 'PERIOD', 'CUSTOMERNAME', 'AMOUNT']
             missing_columns = [col for col in required_columns if col not in df.columns]
@@ -48,6 +50,10 @@ if uploaded_file:
             df['Last_Purchase'] = df.groupby('CUSTOMERNAME')['Date'].transform('max')
             df['Customer_Lifetime'] = (df['Last_Purchase'] - df['First_Purchase']).dt.days // 30
             df['Months_Since_Last_Purchase'] = (df['Date'].max() - df['Last_Purchase']).dt.days // 30
+            df['Time_Between_Purchases'] = df.groupby('CUSTOMERNAME')['Date'].diff().dt.days // 30
+            df['Mean_Time_Between_Purchases'] = df.groupby('CUSTOMERNAME')['Time_Between_Purchases'].transform('mean')
+            df['Std_Dev_Time_Between_Purchases'] = df.groupby('CUSTOMERNAME')['Time_Between_Purchases'].transform('std')
+            df['Max_Time_Without_Purchase'] = df.groupby('CUSTOMERNAME')['Time_Between_Purchases'].transform('max')
             df['Is_Repeat_Customer'] = df['Customer_Transactions'] > 1
             return df
 
@@ -55,26 +61,47 @@ if uploaded_file:
         st.write("### Feature-Engineered Data:")
         st.dataframe(engineered_data.head())
 
+        # Aggregation Function
         def aggregate_features_by_customer(df):
             if 'CUSTOMERNAME' not in df.columns:
                 st.error("Error: 'CUSTOMERNAME' column is required for aggregation.")
                 return df
-            agg_dict = {
-                'AMOUNT': [('Total_Amount_Purchased', lambda x: x[x > 0].sum()),
-                           ('Max_Amount_Purchased', lambda x: x[x > 0].max()),
-                           ('Min_Amount_Purchased', lambda x: x[x > 0].min())],
-                'VOLUME': [('Total_Volume_Purchased', lambda x: x[x > 0].sum())],
-                'ITEMGROUPDESCRIPTION': [('Most_Frequent_Item_Group', lambda x: x.mode().iloc[0] if not x.mode().empty else None)]
-            }
+
             agg_df = df.groupby('CUSTOMERNAME').agg(
-                **{new_col: (col, func) for col, entries in agg_dict.items() for new_col, func in entries}
+                Total_Amount_Purchased=('AMOUNT', lambda x: x[x > 0].sum()),
+                Maximum_Amount_Purchased=('AMOUNT', lambda x: x[x > 0].max()),
+                Minimum_Amount_Purchased=('AMOUNT', lambda x: x[x > 0].min()),
+                Total_Volume_Purchased=('VOLUME', lambda x: x[x > 0].sum()),
+                Maximum_Volume_Purchased=('VOLUME', lambda x: x[x > 0].max()),
+                Minimum_Volume_Purchased=('VOLUME', lambda x: x[x > 0].min()),
+                Most_Frequent_Item_Group=('ITEMGROUPDESCRIPTION', lambda x: x.mode().iloc[0] if not x.mode().empty else None),
+                Customer_Transactions=('Customer_Transactions', 'first'),
+                Months_Since_Last_Purchase=('Months_Since_Last_Purchase', 'first'),
+                Customer_Lifetime=('Customer_Lifetime', 'first'),
+                Active_Month_Percentage=('Customer_Lifetime', lambda x: x[x > 0].count() / x.count()),
+                Std_Dev_Time_Between_Purchases=('Std_Dev_Time_Between_Purchases', 'first'),
+                Mean_Time_Between_Purchases=('Mean_Time_Between_Purchases', 'first'),
+                Max_Time_Without_Purchase=('Max_Time_Without_Purchase', 'first'),
+                Is_Repeat_Customer=('Is_Repeat_Customer', 'first'),
+                Average_Purchase_Value=('AMOUNT', lambda x: x[x > 0].sum() / len(x)),
+                Total_Refund_Amount=('AMOUNT', lambda x: x[x < 0].sum()),
+                First_Purchase=('First_Purchase', 'first'),
+                Last_Purchase=('Last_Purchase', 'first')
             ).reset_index()
             return agg_df
 
         aggregated_data = aggregate_features_by_customer(engineered_data)
+
+        # Adding calculated columns for refund ratio and frequencies
+        aggregated_data['Refund_Ratio'] = aggregated_data['Total_Refund_Amount'].abs() / (
+            aggregated_data['Total_Amount_Purchased'] + aggregated_data['Total_Refund_Amount'].abs())
+        aggregated_data['Average_Purchase_Per_Month'] = aggregated_data['Total_Amount_Purchased'] / aggregated_data['Customer_Lifetime']
+        aggregated_data['Purchase_Frequency_Per_Month'] = aggregated_data['Customer_Transactions'] / aggregated_data['Customer_Lifetime']
+
         st.write("### Aggregated Customer Data:")
         st.dataframe(aggregated_data.head())
 
+        # Data Download as Excel
         def convert_to_excel(df):
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
