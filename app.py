@@ -241,28 +241,10 @@ elif page == "Purchase Prediction":
             # Display model metrics
             if model_metrics:
                 st.write("### Model Metrics:")
-                if 'roc_auc_val' in model_metrics:
-                    st.write(f"**Validation ROC AUC:** {model_metrics['roc_auc_val']:.2f}")
                 if 'roc_auc_test' in model_metrics:
                     st.write(f"**Test ROC AUC:** {model_metrics['roc_auc_test']:.2f}")
                 if 'best_threshold' in model_metrics:
                     st.write(f"**Best Threshold:** {model_metrics['best_threshold']:.2f}")
-
-                if 'confusion_matrix_val' in model_metrics:
-                    st.write("**Confusion Matrix on Validation Data:**")
-                    st.dataframe(pd.DataFrame(
-                        model_metrics['confusion_matrix_val'], 
-                        columns=["Predicted Negative", "Predicted Positive"], 
-                        index=["Actual Negative", "Actual Positive"]
-                    ))
-
-                if 'confusion_matrix_test' in model_metrics:
-                    st.write("**Confusion Matrix on Test Data:**")
-                    st.dataframe(pd.DataFrame(
-                        model_metrics['confusion_matrix_test'], 
-                        columns=["Predicted Negative", "Predicted Positive"], 
-                        index=["Actual Negative", "Actual Positive"]
-                    ))
 
             # Select a customer
             customer_choice = st.selectbox("Select a Customer:", aggregated_data['CUSTOMERNAME'].unique())
@@ -273,7 +255,6 @@ elif page == "Purchase Prediction":
 
                 # Display customer insights
                 st.write("### 📈 Customer Insights")
-                st.write(f"**Country:** {customer_data['COUNTRYNAME'].iloc[0]}")
                 st.write(f"**Customer Lifetime (Months):** {customer_data['Customer_Lifetime'].iloc[0]}")
                 st.write(f"**Mean Time Between Purchases (Months):** {customer_data['Mean_Time_Between_Purchases'].iloc[0]:.2f}")
                 st.write(f"**Total Transactions:** {customer_data['Customer_Transactions'].iloc[0]}")
@@ -281,16 +262,13 @@ elif page == "Purchase Prediction":
                 st.write(f"**Average Purchase Value (AED):** {customer_data['Average_Purchase_Value'].iloc[0]:,.2f}")
 
                 # Prepare data for prediction
-                columns_to_exclude = [
-                    'CUSTOMERNAME', 'Segment', 'Purchase Probability Flag', 'COUNTRYNAME'
-                ]
+                columns_to_exclude = ['CUSTOMERNAME']
                 customer_features = customer_data.drop(columns=columns_to_exclude, errors='ignore')
 
                 # Preprocessing pipeline
                 numerical_vars = ['Customer_Transactions', 'Minimum Amount Purchased', 'Average Purchase Per Month',
                                   'Is_Repeat_Customer', 'Max_Time_Without_Purchase', 'Std_Dev_Time_Between_Purchases',
-                                  'Mean_Time_Between_Purchases', 'Average_Purchase_Value', 'Refund_Ratio',
-                                  'Active_Month_Percentage']
+                                  'Mean_Time_Between_Purchases', 'Average_Purchase_Value', 'Refund_Ratio']
                 categorical_vars = ['Most Frequent Item_Group']
 
                 preprocessor = ColumnTransformer(
@@ -324,5 +302,3 @@ elif page == "Purchase Prediction":
                     st.write(f"**Purchase Flag:** {purchase_flag}")
                 except Exception as e:
                     st.error(f"Prediction failed: {e}")
-
-           
