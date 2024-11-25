@@ -1,24 +1,32 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-from io import BytesIO
+import joblib
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 
-st.title("Customer Data Analytics Pipeline")
+# Navigation Menu
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["Data Pipeline", "Purchase Prediction"])
 
-uploaded_file = st.file_uploader("Upload your raw transactional data (Excel)", type=["xlsx", "xls"])
-if uploaded_file:
-    header_row = st.number_input("Enter the row number for headers (1-based index, default: 1)", min_value=1, value=1) - 1
+# Page 1: Data Pipeline
+if page == "Data Pipeline":
+    st.title("Customer Data Analytics Pipeline")
 
-    try:
-        # Load data
-        raw_data = pd.read_excel(uploaded_file, header=header_row)
-        raw_data.columns = raw_data.columns.str.strip()  # Normalize column names
-        st.write("### Uploaded Raw Data:")
-        st.dataframe(raw_data.head())
+    uploaded_file = st.file_uploader("Upload your raw transactional data (Excel)", type=["xlsx", "xls"])
+    if uploaded_file:
+        header_row = st.number_input("Enter the row number for headers (1-based index, default: 1)", min_value=1, value=1) - 1
 
-        st.write("### Column Names in Uploaded Data:")
-        st.write(list(raw_data.columns))
+        try:
+            # Load data
+            raw_data = pd.read_excel(uploaded_file, header=header_row)
+            raw_data.columns = raw_data.columns.str.strip()  # Normalize column names
+            st.write("### Uploaded Raw Data:")
+            st.dataframe(raw_data.head())
+
+            st.write("### Column Names in Uploaded Data:")
+            st.write(list(raw_data.columns))
 
         # Data Cleaning Function
         def clean_data(df):
